@@ -18,7 +18,6 @@
   --color-gold-deep: oklch(0.47 0.095 75);
   --color-gold: oklch(0.55 0.11 80);
   --color-gold-bright: oklch(0.72 0.13 88);
-  --color-pearl: oklch(0.93 0.008 340);
 
   --font-*: initial;
   --font-serif: 'EB Garamond Variable', Georgia, 'Times New Roman', serif;

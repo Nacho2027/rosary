@@ -111,6 +111,7 @@ function Chip({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={`caps cursor-pointer rounded-md border px-3.5 py-1.5 text-sm transition-colors duration-200 ${
         active

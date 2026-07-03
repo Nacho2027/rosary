@@ -100,13 +100,19 @@ function layout(chain: Chain): void {
     for (const n of neighbours[p]) {
       if (depth[n] >= 0) continue
       depth[n] = depth[p] + 1
-      // the loop ring is ordered in praying direction: +1 index = future
+      // the loop ring is ordered in praying direction: +1 index = future,
+      // bowing right; past bows left. When the walk enters the ring at the
+      // medal (from the pendant), the two strands must still split ±.
       branch[n] =
-        depth[p] === 0
-          ? n === (p + 1) % LOOP_PARTICLES && p < LOOP_PARTICLES
+        depth[p] === 0 && p < LOOP_PARTICLES
+          ? n === (p + 1) % LOOP_PARTICLES
             ? 1
             : -1
-          : branch[p]
+          : p === 0 && n < LOOP_PARTICLES
+            ? n === 1
+              ? 1
+              : -1
+            : branch[p]
       queue.push(n)
     }
   }
@@ -192,8 +198,8 @@ function substep(chain: Chain, damping: number): void {
       const dz = ANCHOR[2] - pos[x + 2]
       const dist = Math.hypot(dx, dy, dz)
       // exponential ease for the last stretch (a soft ~0.4s draw into the
-      // fingers), linear speed cap for long transfers so reset isn't slow
-      const s = dist > 1e-6 ? Math.min((PULL_SPEED * H) / dist, 0.055) : 0
+      // fingers), linear speed cap for long transfers, snap when arrived
+      const s = dist < 0.01 ? 1 : Math.min((PULL_SPEED * H) / dist, 0.055)
       prev[x] = pos[x]
       prev[x + 1] = pos[x + 1]
       prev[x + 2] = pos[x + 2]
@@ -211,7 +217,9 @@ function substep(chain: Chain, damping: number): void {
     pos[x] += vx
     pos[x + 1] += vy + g
     pos[x + 2] += vz
-    const m = Math.abs(vx) + Math.abs(vy + g) + Math.abs(vz)
+    // velocity only (not g): at rest the constraint solve cancels gravity's
+    // sink each substep, so v→0 while |g| alone would keep us awake forever
+    const m = Math.abs(vx) + Math.abs(vy) + Math.abs(vz)
     if (m > maxMove) maxMove = m
   }
   chain.calmFor = maxMove < SLEEP_EPSILON ? chain.calmFor + 1 : 0
@@ -279,10 +287,28 @@ export function stepChain(chain: Chain, dt: number, calm = false): void {
   if (isAsleep(chain)) return // at rest: skip the whole solve
   chain.accumulator = Math.min(chain.accumulator + dt, MAX_FRAME)
   const damping = calm ? DAMPING_CALM : DAMPING
-  while (chain.accumulator >= H) {
+  // the H epsilon stops 0/2-substep alternation on 120Hz displays, where
+  // dt hovers exactly at the substep boundary
+  while (chain.accumulator >= H - 1e-4) {
     substep(chain, damping)
-    chain.accumulator -= H
+    chain.accumulator = Math.max(0, chain.accumulator - H)
   }
+}
+
+/**
+ * Release the grabbed particle with the pointer's real velocity — the
+ * substep-quantized prev would zero the flick on 60Hz displays.
+ */
+export function releaseGrab(chain: Chain, vx: number, vy: number): void {
+  if (chain.grabbed >= 0) {
+    const speed = Math.hypot(vx, vy)
+    const s = speed > 30 ? 30 / speed : 1 // clamp runaway flicks
+    const x = chain.grabbed * 3
+    chain.prev[x] = chain.pos[x] - vx * s * H
+    chain.prev[x + 1] = chain.pos[x + 1] - vy * s * H
+  }
+  chain.grabbed = -1
+  chain.calmFor = 0
 }
 
 /** Nearest grabbable particle to a world point, within maxDist. */

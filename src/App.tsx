@@ -18,12 +18,18 @@ export default function App() {
 
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const tap = useRef<{ x: number; y: number; t: number } | null>(null)
-  const pinchDist = useRef<number | null>(null)
+  const pinch = useRef<{ a: number; b: number; dist: number } | null>(null)
 
   // keyboard: space/→ advance, ←/backspace correct
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { settingsOpen, guideOpen, guideSeen, advance, back } = useRosary.getState()
+      const { settingsOpen, guideOpen, guideSeen, advance, back, openSettings, openGuide } =
+        useRosary.getState()
+      if (e.key === 'Escape') {
+        if (settingsOpen) openSettings(false)
+        else if (guideOpen || !guideSeen) openGuide(false)
+        return
+      }
       if (settingsOpen || guideOpen || !guideSeen) return
       // let focused controls keep their native keyboard activation
       if (document.activeElement?.closest('button, a, input, [tabindex]')) return
@@ -39,27 +45,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  /** true when the event started on chrome that handles its own input */
-  const isUi = (e: React.PointerEvent) =>
-    (e.target as Element).closest('button, [data-card]') !== null
-
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
-    const onUi = isUi(e)
+    const target = e.target as Element
+    const onButton = target.closest('button') !== null
+    const onCard = target.closest('[data-card]') !== null
     // capture so a release outside the window still delivers pointerup
-    if (!onUi) e.currentTarget.setPointerCapture(e.pointerId)
+    if (!onButton && !onCard) e.currentTarget.setPointerCapture(e.pointerId)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (pointers.current.size === 2) {
-      // pinch begins: stop dragging the chain, remember the finger gap
+      // pinch begins: stop dragging the chain, remember the finger pair
       grabApi.current?.release()
       tap.current = null
-      const [a, b] = [...pointers.current.values()]
-      pinchDist.current = Math.hypot(a.x - b.x, a.y - b.y)
+      const [a, b] = [...pointers.current.keys()]
+      const pa = pointers.current.get(a)!
+      const pb = pointers.current.get(b)!
+      pinch.current = { a, b, dist: Math.hypot(pa.x - pb.x, pa.y - pb.y) }
       return
     }
     if (pointers.current.size > 2) return
-    tap.current = { x: e.clientX, y: e.clientY, t: e.timeStamp }
-    if (!onUi) grabApi.current?.grab(e.clientX, e.clientY)
+    // buttons handle their own clicks — a tap there must not also advance
+    if (!onButton) tap.current = { x: e.clientX, y: e.clientY, t: e.timeStamp }
+    if (!onButton && !onCard) grabApi.current?.grab(e.clientX, e.clientY)
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -67,11 +74,15 @@ export default function App() {
     if (!p) return
     p.x = e.clientX
     p.y = e.clientY
-    if (pinchDist.current !== null && pointers.current.size >= 2) {
-      const [a, b] = [...pointers.current.values()]
-      const d = Math.hypot(a.x - b.x, a.y - b.y)
-      zoomBy((d - pinchDist.current) * 0.004)
-      pinchDist.current = d
+    const pn = pinch.current
+    if (pn) {
+      const pa = pointers.current.get(pn.a)
+      const pb = pointers.current.get(pn.b)
+      if (pa && pb) {
+        const d = Math.hypot(pa.x - pb.x, pa.y - pb.y)
+        zoomBy((d - pn.dist) * 0.004)
+        pn.dist = d
+      }
       return
     }
     if (tap.current && Math.hypot(e.clientX - tap.current.x, e.clientY - tap.current.y) > TAP_SLOP) {
@@ -82,17 +93,24 @@ export default function App() {
 
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId)
-    if (pointers.current.size < 2) pinchDist.current = null
+    if (pinch.current && (e.pointerId === pinch.current.a || e.pointerId === pinch.current.b)) {
+      pinch.current = null
+    }
     grabApi.current?.release()
     const t = tap.current
     tap.current = null
-    if (t && e.timeStamp - t.t < TAP_MS) useRosary.getState().advance()
+    // e.detail > 1 = double-click word selection; never advance twice for it
+    if (t && e.timeStamp - t.t < TAP_MS && e.detail <= 1 && !window.getSelection()?.toString()) {
+      useRosary.getState().advance()
+    }
   }
 
   const onPointerCancel = (e: React.PointerEvent) => {
     // the browser took the gesture (e.g. card scroll) — never advance
     pointers.current.delete(e.pointerId)
-    if (pointers.current.size < 2) pinchDist.current = null
+    if (pinch.current && (e.pointerId === pinch.current.a || e.pointerId === pinch.current.b)) {
+      pinch.current = null
+    }
     grabApi.current?.release()
     tap.current = null
   }
@@ -116,7 +134,13 @@ export default function App() {
         <button
           type="button"
           aria-label={UI.back[lang]}
-          onClick={back}
+          onClick={(e) => {
+            back()
+            // a mouse click leaves focus here, which would turn Space into
+            // "press Back again" — keyboard activation (detail 0) keeps focus
+            if (e.detail > 0) e.currentTarget.blur()
+          }}
+          disabled={step === 0 || done}
           className={`cursor-pointer rounded-md border-0 bg-transparent p-3 text-ink-2 transition-opacity duration-300 hover:text-ink ${
             step > 0 && !done ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
@@ -128,7 +152,10 @@ export default function App() {
         <button
           type="button"
           aria-label={UI.settings[lang]}
-          onClick={() => settings(true)}
+          onClick={(e) => {
+            settings(true)
+            if (e.detail > 0) e.currentTarget.blur()
+          }}
           className="cursor-pointer rounded-md border-0 bg-transparent p-3 text-ink-2 transition-colors duration-200 hover:text-ink"
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>

@@ -17,7 +17,7 @@ import {
 } from 'three'
 import { BEADS, SEQUENCE } from '../data/rosary'
 import { useRosary } from '../store'
-import { buildChain, holdBead, isAsleep, nearestParticle, stepChain } from './verlet'
+import { buildChain, holdBead, isAsleep, nearestParticle, releaseGrab, stepChain } from './verlet'
 import { grabApi, view } from './interaction'
 
 const RADIUS = { small: 0.21, large: 0.3 } as const
@@ -122,6 +122,7 @@ export function Rosary() {
   const camera = useThree((s) => s.camera)
   const size = useThree((s) => s.size)
   const pulse = useRef(0)
+  const lastDrag = useRef({ x: 0, y: 0, t: 0, vx: 0, vy: 0 })
 
   // pointer ↔ world: a ray from the camera onto the chain's z=0 plane
   const worldAt = (clientX: number, clientY: number, out: Vector3) => {
@@ -143,15 +144,24 @@ export function Rosary() {
         chain.grabbed = p
         chain.grabTarget = [tmpV.x, tmpV.y, 0]
         chain.calmFor = 0
+        lastDrag.current = { x: tmpV.x, y: tmpV.y, t: performance.now(), vx: 0, vy: 0 }
       },
       drag: (x, y) => {
         if (chain.grabbed < 0) return
         worldAt(x, y, tmpV)
         chain.grabTarget = [tmpV.x, tmpV.y, 0]
+        const d = lastDrag.current
+        const dt = (performance.now() - d.t) / 1000
+        if (dt > 0.004) {
+          d.vx = (tmpV.x - d.x) / dt
+          d.vy = (tmpV.y - d.y) / dt
+          d.x = tmpV.x
+          d.y = tmpV.y
+          d.t = performance.now()
+        }
       },
       release: () => {
-        chain.grabbed = -1
-        chain.calmFor = 0 // stay awake for the flick
+        releaseGrab(chain, lastDrag.current.vx, lastDrag.current.vy)
       },
     }
     return () => {
@@ -241,7 +251,11 @@ export function Rosary() {
       at(pos, beadParticle[0], cross.position)
       at(pos, beadParticle[0] - 1, tmpV)
       tmpV2.copy(cross.position).sub(tmpV).normalize().negate()
-      if (tmpV2.y < 0.1) tmpV2.set(tmpV2.x, Math.abs(tmpV2.y) + 0.4, tmpV2.z).normalize()
+      if (tmpV2.y < 0.35) {
+        // smooth floor: the cross leans but never swings past horizontal
+        tmpV2.y = 0.35 * Math.exp((tmpV2.y - 0.35) * 2)
+        tmpV2.normalize()
+      }
       cross.quaternion.setFromUnitVectors(UP, tmpV2)
     }
 

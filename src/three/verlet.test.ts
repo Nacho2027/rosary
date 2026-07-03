@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { BEADS } from '../data/rosary'
-import { ANCHOR, buildChain, holdBead, nearestParticle, stepChain, PARTICLE_COUNT } from './verlet'
+import {
+  ANCHOR,
+  buildChain,
+  holdBead,
+  isAsleep,
+  nearestParticle,
+  stepChain,
+  PARTICLE_COUNT,
+} from './verlet'
 
 const settle = (chain: ReturnType<typeof buildChain>, frames: number) => {
   for (let i = 0; i < frames; i++) stepChain(chain, 1 / 60)
@@ -69,6 +77,14 @@ describe('the verlet chain', () => {
     settle(chain, 1200)
     // gravity brings the dangle back under the anchor
     expect(Math.abs(chain.pos[grab * 3] - ANCHOR[0])).toBeLessThan(2.5)
+  })
+
+  it('falls asleep at rest and wakes on transfer', () => {
+    const chain = buildChain(0)
+    settle(chain, 1200)
+    expect(isAsleep(chain)).toBe(true)
+    holdBead(chain, 1)
+    expect(isAsleep(chain)).toBe(false)
   })
 
   it('keeps beads from interpenetrating while dangling', () => {

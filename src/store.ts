@@ -52,6 +52,11 @@ export const useRosary = create<RosaryState>()(
     }),
     {
       name: 'rosary',
+      version: 2,
+      // v1 persisted guideOpen instead of guideSeen; anyone with stored
+      // state has already seen (or dismissed) the guide
+      migrate: (persisted, version) =>
+        version < 2 ? { ...(persisted as object), guideSeen: true } : persisted,
       partialize: ({ step, lang, mysteryOverride, sessionSet, sound, guideSeen }) => ({
         step,
         lang,
