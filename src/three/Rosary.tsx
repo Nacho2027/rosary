@@ -273,6 +273,7 @@ export function Rosary() {
       const r = RADIUS[kind as 'small' | 'large']
       halo.scale.setScalar(r * 1.12 * (1 + pulse.current * 0.45))
       haloMaterial.color.copy(kind === 'large' ? GARNET : PEARL)
+      haloMaterial.emissiveIntensity = kind === 'large' ? 0.18 : 0.4
     }
     const glow = 0.55 * (1 + pulse.current)
     crossMaterial.emissiveIntensity = MathUtils.damp(
