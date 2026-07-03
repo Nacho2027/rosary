@@ -1,0 +1,133 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/eb-garamond';
+@import '@fontsource-variable/eb-garamond/wght-italic.css';
+
+/*
+ * Design tokens. One warm hue family for every neutral (H 60–90),
+ * all contrast spent in value, gold as the single accent.
+ * Contrast verified: ink/parchment 11.5:1 · gold-deep/parchment 6.3:1.
+ */
+@theme {
+  --color-*: initial;
+  --color-parchment: oklch(0.965 0.012 85);
+  --color-parchment-deep: oklch(0.935 0.02 80);
+  --color-card: oklch(0.985 0.007 90);
+  --color-ink: oklch(0.32 0.03 60);
+  --color-ink-2: oklch(0.48 0.035 70);
+  --color-ink-3: oklch(0.62 0.03 75);
+  --color-gold-deep: oklch(0.47 0.095 75);
+  --color-gold: oklch(0.55 0.11 80);
+  --color-gold-bright: oklch(0.72 0.13 88);
+  --color-pearl: oklch(0.93 0.008 340);
+
+  --font-*: initial;
+  --font-serif: 'EB Garamond Variable', Georgia, 'Times New Roman', serif;
+
+  /* Quiet 1.25 modular scale from a 16px base */
+  --text-2xs: 0.64rem;
+  --text-xs: 0.8rem;
+  --text-sm: 0.9rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5625rem;
+  --text-2xl: 1.953rem;
+
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root {
+  color-scheme: light;
+  font-optical-sizing: auto;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 450; /* old-styles lose apparent color on tinted grounds */
+  color: var(--color-ink);
+  background-color: var(--color-parchment);
+  text-rendering: optimizeLegibility;
+}
+
+/* Parchment: radial vignette toward the edges + fractal-noise grain */
+.parchment::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background:
+    radial-gradient(120% 90% at 50% 42%, transparent 55%, oklch(0.935 0.02 80 / 0.55) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* Labels, counters, running heads: the serif's own small caps, tracked */
+.caps {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.09em;
+  font-feature-settings: 'onum';
+}
+
+.prayer-text {
+  font-size: clamp(1.25rem, 3.5vw, 1.55rem);
+  line-height: 1.42;
+  hanging-punctuation: first last;
+  text-wrap: pretty;
+}
+
+/* Line-by-line brightening: candlelight moving down the page.
+   A color shift (never opacity 0) so text is always readable. */
+@keyframes brighten {
+  from {
+    color: var(--color-ink-3);
+  }
+  to {
+    color: var(--color-ink);
+  }
+}
+.prayer-line {
+  color: var(--color-ink-3);
+  animation: brighten 0.5s var(--ease-settle) forwards;
+  animation-delay: calc(var(--line) * 110ms + 80ms);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.45s var(--ease-settle) both;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold-deep);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: oklch(0.88 0.06 85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prayer-line {
+    animation-duration: 0.01ms;
+    animation-delay: 0ms;
+  }
+  .rise {
+    animation-duration: 0.01ms;
+  }
+}
