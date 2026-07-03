@@ -28,6 +28,12 @@ const CROSS_H = 1.5
 const CROSS_CENTER_Y = -0.5
 const CROSS_RING_R = (CROSS_H / 2) * 1.35
 
+/* fixed attachment points (local space) — chain rods bolt to these */
+const MEDAL_LUG_R = new Vector3(0.13, 0.3, 0)
+const MEDAL_LUG_L = new Vector3(-0.13, 0.3, 0)
+const MEDAL_LUG_B = new Vector3(0, -0.36, 0)
+const CROSS_LUG = new Vector3(0, 0.3, 0)
+
 const PEARL = new Color('#f2ebee')
 /* the Our Father beads are garnet — smaller, darker, instantly distinct */
 const GARNET = new Color('#7a2f3a')
@@ -37,19 +43,19 @@ const GARNET_PRAYED = new Color('#a05a52')
 /** last step index that touches each bead — a bead is "prayed" once past it */
 const LAST_STEP = BEADS.map((_, b) => SEQUENCE.reduce((last, s, i) => (s.bead === b ? i : last), -1))
 
-/* satin pearls: broad soft highlight windows, never a hard white dot */
+/* glossy glass beads: crisp window reflections, like lacquered stone */
 const pearlMaterial = new MeshPhysicalMaterial({
   color: '#ffffff',
-  roughness: 0.24,
+  roughness: 0.09,
   clearcoat: 1,
-  clearcoatRoughness: 0.42,
-  iridescence: 0.45,
+  clearcoatRoughness: 0.1,
+  iridescence: 0.3,
   iridescenceIOR: 1.22,
   iridescenceThicknessRange: [120, 480],
-  sheen: 0.5,
+  sheen: 0.25,
   sheenColor: '#ffe8f0',
-  sheenRoughness: 0.55,
-  envMapIntensity: 1.05,
+  sheenRoughness: 0.5,
+  envMapIntensity: 1.15,
 })
 
 const goldMaterial = new MeshStandardMaterial({
@@ -76,8 +82,9 @@ haloMaterial.emissiveIntensity = 0.4
 const ringMaterial = new MeshBasicMaterial({ color: '#b8912e', transparent: true, opacity: 0.85 })
 
 const beadGeometry = new SphereGeometry(1, 48, 32)
-const linkGeometry = new CylinderGeometry(0.02, 0.02, 1, 16, 1, true)
-const capGeometry = new CylinderGeometry(0.055, 0.075, 0.05, 24, 1)
+const linkGeometry = new CylinderGeometry(0.018, 0.018, 1, 16, 1, true)
+const capGeometry = new CylinderGeometry(0.05, 0.07, 0.045, 24, 1)
+const loopGeometry = new TorusGeometry(0.042, 0.014, 10, 24)
 const ringGeometry = new TorusGeometry(1, 0.03, 12, 64)
 
 const tmpObj = new Object3D()
@@ -107,6 +114,7 @@ export function Rosary() {
   )
   const beadsRef = useRef<InstancedMesh>(null)
   const capsRef = useRef<InstancedMesh>(null)
+  const loopsRef = useRef<InstancedMesh>(null)
   const linksRef = useRef<InstancedMesh>(null)
   const haloRef = useRef<Mesh>(null)
   const ringRef = useRef<Mesh>(null)
@@ -210,21 +218,63 @@ export function Rosary() {
       }
       inst.instanceMatrix.needsUpdate = true
 
-      // chain runs surface to surface — never through a bead — with a small
-      // gold cap seated wherever a rod meets a bead
+      // medal: a coin hanging where the loop meets the pendant, tilting
+      // with the pendant it carries (positioned before the chain so rods
+      // can attach to its fixed lugs)
+      const medal = medalRef.current!
+      at(pos, 0, medal.position)
+      at(pos, beadParticle[1], tmpV) // toward the Our Father bead below
+      tmpV2.copy(medal.position).sub(tmpV).normalize()
+      medal.quaternion.setFromUnitVectors(UP, tmpV2)
+
+      // crucifix: follows the last pendant segment with damped rotation, so
+      // it swings like a weighted pendant instead of snapping — and if the
+      // chain points it downward, the mirrored target keeps it upright
+      const cross = crossRef.current!
+      at(pos, beadParticle[0], cross.position)
+      at(pos, beadParticle[0] - 1, tmpV)
+      tmpV2.copy(cross.position).sub(tmpV).normalize().negate()
+      if (tmpV2.y < 0.05) tmpV2.y = 0.05 + (0.05 - tmpV2.y) * 0.4
+      tmpV2.normalize()
+      tmpQ.setFromUnitVectors(UP, tmpV2)
+      cross.quaternion.slerp(tmpQ, 1 - Math.exp(-7 * dt))
+
+      // where a rod meets the medal or crucifix it attaches to a FIXED lug
+      // on the piece — real hardware, not a point sliding around the rim
+      const lugFor = (self: number, other: number, out: Vector3): boolean => {
+        if (self === 0) {
+          // the three links at the medal: →1 (decades right), →111 (decades
+          // left), →112 (pendant below)
+          out.copy(other === 1 ? MEDAL_LUG_R : other === 111 ? MEDAL_LUG_L : MEDAL_LUG_B)
+          out.applyQuaternion(medal.quaternion).add(medal.position)
+          return true
+        }
+        if (self === beadParticle[0]) {
+          out.copy(CROSS_LUG).applyQuaternion(cross.quaternion).add(cross.position)
+          return true
+        }
+        return false
+      }
+
+      // the chain: surface to surface, a cap where a rod leaves a bead, a
+      // small wire loop at the middle of every gap
       const links = linksRef.current!
       const caps = capsRef.current!
+      const loops = loopsRef.current!
       const { links: L } = chain
       for (let l = 0; l < L.length; l += 3) {
         const a = L[l]
         const b = L[l + 1]
         at(pos, a, tmpV)
         at(pos, b, tmpV2)
+        // fixed lugs override the particle position at special pieces
+        const lugA = lugFor(a, b, tmpV)
+        const lugB = lugFor(b, a, tmpV2)
         tmpV2.sub(tmpV)
         const len = tmpV2.length() || 1e-6
         tmpV2.divideScalar(len)
-        const ra = particleR[a] * 0.96
-        const rb = particleR[b] * 0.96
+        const ra = lugA ? 0 : particleR[a] * 0.96
+        const rb = lugB ? 0 : particleR[b] * 0.96
         const seg = len - ra - rb
         const li = l / 3
         if (seg > 0.02) {
@@ -236,6 +286,18 @@ export function Rosary() {
         }
         tmpObj.updateMatrix()
         links.setMatrixAt(li, tmpObj.matrix)
+
+        // the wire loop joining the two pins, rolled per link for variety
+        if (seg > 0.12) {
+          tmpObj.position.copy(tmpV).addScaledVector(tmpV2, ra + seg / 2)
+          tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
+          tmpObj.rotateY(li * 1.71)
+          tmpObj.scale.setScalar(1)
+        } else {
+          tmpObj.scale.setScalar(0)
+        }
+        tmpObj.updateMatrix()
+        loops.setMatrixAt(li, tmpObj.matrix)
 
         // caps: wide end against the bead, pointing along this rod
         if (ra > 0.1 && seg > 0.02) {
@@ -260,26 +322,7 @@ export function Rosary() {
       }
       links.instanceMatrix.needsUpdate = true
       caps.instanceMatrix.needsUpdate = true
-
-      // medal: a coin hanging where the loop meets the pendant, tilting
-      // with the pendant it carries
-      const medal = medalRef.current!
-      at(pos, 0, medal.position)
-      at(pos, beadParticle[1], tmpV) // toward the Our Father bead below
-      tmpV2.copy(medal.position).sub(tmpV).normalize()
-      medal.quaternion.setFromUnitVectors(UP, tmpV2)
-
-      // crucifix: follows the last pendant segment with damped rotation, so
-      // it swings like a weighted pendant instead of snapping — and if the
-      // chain points it downward, the mirrored target keeps it upright
-      const cross = crossRef.current!
-      at(pos, beadParticle[0], cross.position)
-      at(pos, beadParticle[0] - 1, tmpV)
-      tmpV2.copy(cross.position).sub(tmpV).normalize().negate()
-      if (tmpV2.y < 0.05) tmpV2.y = 0.05 + (0.05 - tmpV2.y) * 0.4
-      tmpV2.normalize()
-      tmpQ.setFromUnitVectors(UP, tmpV2)
-      cross.quaternion.slerp(tmpQ, 1 - Math.exp(-7 * dt))
+      loops.instanceMatrix.needsUpdate = true
     }
 
     // current bead: held at the anchor — halo + ring mark it
@@ -336,6 +379,11 @@ export function Rosary() {
         args={[linkGeometry, goldMaterial, chain.links.length / 3]}
         frustumCulled={false}
       />
+      <instancedMesh
+        ref={loopsRef}
+        args={[loopGeometry, goldMaterial, chain.links.length / 3]}
+        frustumCulled={false}
+      />
       <mesh ref={haloRef} geometry={beadGeometry} material={haloMaterial} frustumCulled={false} />
       <mesh ref={ringRef} geometry={ringGeometry} material={ringMaterial} frustumCulled={false} />
       <group ref={medalRef}>
@@ -354,6 +402,12 @@ export function Rosary() {
         <mesh material={goldMaterial} position={[0, 0.06, 0.055]}>
           <boxGeometry args={[0.18, 0.05, 0.035]} />
         </mesh>
+        {/* the three bail rings the chain bolts to */}
+        {[MEDAL_LUG_R, MEDAL_LUG_L, MEDAL_LUG_B].map((lug, i) => (
+          <mesh key={i} material={goldMaterial} position={lug}>
+            <torusGeometry args={[0.05, 0.018, 10, 20]} />
+          </mesh>
+        ))}
       </group>
       <group ref={crossRef} frustumCulled={false}>
         <RoundedBox
