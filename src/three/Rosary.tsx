@@ -305,22 +305,23 @@ export function Rosary() {
         const roll = gi * (Math.PI / 2)
 
         const seat = (surface: number, sign: 1 | -1, pinI: number, loopI: number) => {
-          // loop just off the gap's middle, its plane containing the wire
+          // loop just off the gap's middle — the torus already stands with
+          // its plane containing the wire, so it reads as a link, not a
+          // washer; the two loops roll 90° apart to interlock
           const loopCenter = mid - sign * loopR * 0.45
           tmpObj.position.copy(tmpV).addScaledVector(tmpV2, loopCenter)
           tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
           tmpObj.rotateY(roll + (sign > 0 ? 0 : Math.PI / 2))
-          tmpObj.rotateX(Math.PI / 2)
           tmpObj.scale.setScalar(s)
           tmpObj.updateMatrix()
           loops.setMatrixAt(loopI, tmpObj.matrix)
-          // pin from just inside the bead to just inside the loop
-          const pinEnd = loopCenter - sign * loopR * 0.6
-          const pinLen = Math.abs(pinEnd - surface) + 0.03
-          if (pinLen > 0.035) {
+          // pin from just inside the bead to just inside its own loop
+          const pinEnd = loopCenter - sign * loopR * 0.8
+          const pinLen = Math.abs(pinEnd - surface) + 0.012
+          if (pinLen > 0.03) {
             tmpObj.position
               .copy(tmpV)
-              .addScaledVector(tmpV2, (surface - sign * 0.015 + pinEnd) / 2)
+              .addScaledVector(tmpV2, (surface - sign * 0.012 + pinEnd) / 2)
             tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
             tmpObj.scale.set(1, pinLen, 1)
           } else {
