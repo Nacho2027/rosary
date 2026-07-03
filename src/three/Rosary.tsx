@@ -11,6 +11,7 @@ import {
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   Object3D,
+  Quaternion,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -67,24 +68,22 @@ const activeGold = () => {
 const crossMaterial = activeGold()
 const medalMaterial = activeGold()
 
-const haloMaterial = new MeshPhysicalMaterial({
-  color: '#f2ebee',
-  roughness: 0.1,
-  clearcoat: 1,
-  emissive: '#93690d',
-  emissiveIntensity: 0.4,
-})
+/* same satin finish as every other bead — just lit from within */
+const haloMaterial = pearlMaterial.clone()
+haloMaterial.emissive.set('#93690d')
+haloMaterial.emissiveIntensity = 0.4
 
 const ringMaterial = new MeshBasicMaterial({ color: '#b8912e', transparent: true, opacity: 0.85 })
 
-const beadGeometry = new SphereGeometry(1, 32, 24)
-const linkGeometry = new CylinderGeometry(0.02, 0.02, 1, 6, 1, true)
-const capGeometry = new CylinderGeometry(0.06, 0.075, 0.05, 10, 1)
-const ringGeometry = new TorusGeometry(1, 0.03, 10, 48)
+const beadGeometry = new SphereGeometry(1, 48, 32)
+const linkGeometry = new CylinderGeometry(0.02, 0.02, 1, 16, 1, true)
+const capGeometry = new CylinderGeometry(0.055, 0.075, 0.05, 24, 1)
+const ringGeometry = new TorusGeometry(1, 0.03, 12, 64)
 
 const tmpObj = new Object3D()
 const tmpV = new Vector3()
 const tmpV2 = new Vector3()
+const tmpQ = new Quaternion()
 const UP = new Vector3(0, 1, 0)
 const tmpColor = new Color()
 
@@ -123,8 +122,9 @@ export function Rosary() {
   const particleR = useMemo(() => {
     const r = new Float32Array(chain.pos.length / 3)
     BEADS.forEach((kind, b) => {
+      // the medal radius matches its oval rim so rods stop at the disc edge
       r[chain.beadParticle[b]] =
-        kind === 'small' ? 0.21 : kind === 'large' ? 0.24 : kind === 'medal' ? 0.3 : 0.07
+        kind === 'small' ? 0.21 : kind === 'large' ? 0.24 : kind === 'medal' ? 0.38 : 0.07
     })
     return r
   }, [chain])
@@ -269,18 +269,17 @@ export function Rosary() {
       tmpV2.copy(medal.position).sub(tmpV).normalize()
       medal.quaternion.setFromUnitVectors(UP, tmpV2)
 
-      // crucifix: hangs along the last pendant segment — but never inverted,
-      // even while held with the chain below it
+      // crucifix: follows the last pendant segment with damped rotation, so
+      // it swings like a weighted pendant instead of snapping — and if the
+      // chain points it downward, the mirrored target keeps it upright
       const cross = crossRef.current!
       at(pos, beadParticle[0], cross.position)
       at(pos, beadParticle[0] - 1, tmpV)
       tmpV2.copy(cross.position).sub(tmpV).normalize().negate()
-      if (tmpV2.y < 0.35) {
-        // smooth floor: the cross leans but never swings past horizontal
-        tmpV2.y = 0.35 * Math.exp((tmpV2.y - 0.35) * 2)
-        tmpV2.normalize()
-      }
-      cross.quaternion.setFromUnitVectors(UP, tmpV2)
+      if (tmpV2.y < 0.05) tmpV2.y = 0.05 + (0.05 - tmpV2.y) * 0.4
+      tmpV2.normalize()
+      tmpQ.setFromUnitVectors(UP, tmpV2)
+      cross.quaternion.slerp(tmpQ, 1 - Math.exp(-7 * dt))
     }
 
     // current bead: held at the anchor — halo + ring mark it
@@ -349,11 +348,11 @@ export function Rosary() {
             <torusGeometry args={[0.27, 0.035, 12, 40]} />
           </mesh>
         </group>
-        <mesh material={goldMaterial} position={[0, 0, 0.045]}>
-          <boxGeometry args={[0.05, 0.3, 0.03]} />
+        <mesh material={goldMaterial} position={[0, 0, 0.055]}>
+          <boxGeometry args={[0.05, 0.3, 0.035]} />
         </mesh>
-        <mesh material={goldMaterial} position={[0, 0.06, 0.045]}>
-          <boxGeometry args={[0.18, 0.05, 0.03]} />
+        <mesh material={goldMaterial} position={[0, 0.06, 0.055]}>
+          <boxGeometry args={[0.18, 0.05, 0.035]} />
         </mesh>
       </group>
       <group ref={crossRef} frustumCulled={false}>
