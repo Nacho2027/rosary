@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Environment, Lightformer } from '@react-three/drei'
-import { BackSide, MathUtils, Vector3 } from 'three'
+import { BackSide, CanvasTexture, MathUtils, Vector3 } from 'three'
 import { Rosary } from './Rosary'
 import { ANCHOR } from './verlet'
 import { view } from './interaction'
@@ -12,6 +12,22 @@ const OVERVIEW = new Vector3(ANCHOR[0], ANCHOR[1] - 6.2, 0)
 const FINGERS = new Vector3(...ANCHOR)
 
 const tmp = new Vector3()
+
+/* the environment room: bright warm above, falling to shadow below, so
+   every sphere shades naturally from lit crown to dark underside */
+function domeTexture(): CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 2
+  c.height = 256
+  const g = c.getContext('2d')!
+  const grad = g.createLinearGradient(0, 0, 0, 256)
+  grad.addColorStop(0, '#b3a184')
+  grad.addColorStop(0.55, '#7d6f5b')
+  grad.addColorStop(1, '#38312a')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 2, 256)
+  return new CanvasTexture(c)
+}
 
 function CameraRig() {
   const camera = useThree((s) => s.camera)
@@ -58,7 +74,7 @@ export function RosaryScene() {
               highlights, a cool fill, and a floor bounce */}
           <mesh scale={60}>
             <sphereGeometry />
-            <meshBasicMaterial color="#7d6f5b" side={BackSide} />
+            <meshBasicMaterial map={domeTexture()} side={BackSide} />
           </mesh>
           <Lightformer
             intensity={5}

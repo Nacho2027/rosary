@@ -20,7 +20,7 @@ import { useRosary } from '../store'
 import { buildChain, holdBead, isAsleep, nearestParticle, releaseGrab, stepChain } from './verlet'
 import { grabApi, view } from './interaction'
 
-const RADIUS = { small: 0.21, large: 0.3 } as const
+const RADIUS = { small: 0.21, large: 0.24 } as const
 
 /* crucifix proportions — the highlight ring is derived from these */
 const CROSS_H = 1.5
@@ -28,8 +28,10 @@ const CROSS_CENTER_Y = -0.5
 const CROSS_RING_R = (CROSS_H / 2) * 1.35
 
 const PEARL = new Color('#f2ebee')
-const PEARL_LARGE = new Color('#efe3d3')
+/* the Our Father beads are garnet — smaller, darker, instantly distinct */
+const GARNET = new Color('#7a2f3a')
 const GILT = new Color('#d8bc82')
+const GARNET_PRAYED = new Color('#a05a52')
 
 /** last step index that touches each bead — a bead is "prayed" once past it */
 const LAST_STEP = BEADS.map((_, b) => SEQUENCE.reduce((last, s, i) => (s.bead === b ? i : last), -1))
@@ -75,7 +77,7 @@ const haloMaterial = new MeshPhysicalMaterial({
 const ringMaterial = new MeshBasicMaterial({ color: '#b8912e', transparent: true, opacity: 0.85 })
 
 const beadGeometry = new SphereGeometry(1, 32, 24)
-const linkGeometry = new CylinderGeometry(0.024, 0.024, 1, 6, 1, true)
+const linkGeometry = new CylinderGeometry(0.02, 0.02, 1, 6, 1, true)
 const capGeometry = new CylinderGeometry(0.06, 0.075, 0.05, 10, 1)
 const ringGeometry = new TorusGeometry(1, 0.03, 10, 48)
 
@@ -176,11 +178,11 @@ export function Rosary() {
     const inst = beadsRef.current
     if (!inst) return
     INST_BEADS.forEach((b, i) => {
-      const base = BEADS[b] === 'large' ? PEARL_LARGE : PEARL
-      tmpColor.copy(base)
-      // subtle per-pearl variation: hue drift + lightness sparkle
+      const garnet = BEADS[b] === 'large'
+      tmpColor.copy(garnet ? GARNET : PEARL)
+      // subtle per-bead variation: hue drift + lightness sparkle
       tmpColor.offsetHSL((seeded(b, 1) - 0.5) * 0.045, seeded(b, 2) * 0.03, (seeded(b, 3) - 0.5) * 0.04)
-      if (LAST_STEP[b] < step) tmpColor.lerp(GILT, 0.45)
+      if (LAST_STEP[b] < step) tmpColor.lerp(garnet ? GARNET_PRAYED : GILT, 0.5)
       inst.setColorAt(i, tmpColor)
     })
     inst.instanceColor!.needsUpdate = true
@@ -270,6 +272,7 @@ export function Rosary() {
       halo.position.copy(view.beadPos)
       const r = RADIUS[kind as 'small' | 'large']
       halo.scale.setScalar(r * 1.12 * (1 + pulse.current * 0.45))
+      haloMaterial.color.copy(kind === 'large' ? GARNET : PEARL)
     }
     const glow = 0.55 * (1 + pulse.current)
     crossMaterial.emissiveIntensity = MathUtils.damp(
@@ -314,11 +317,20 @@ export function Rosary() {
       <mesh ref={haloRef} geometry={beadGeometry} material={haloMaterial} frustumCulled={false} />
       <mesh ref={ringRef} geometry={ringGeometry} material={ringMaterial} frustumCulled={false} />
       <group ref={medalRef}>
-        <mesh material={medalMaterial} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.36, 0.36, 0.07, 32]} />
+        {/* an oval medal with a raised rim and embossed cross */}
+        <group scale={[1, 1.22, 1]}>
+          <mesh material={medalMaterial} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.27, 0.27, 0.06, 32]} />
+          </mesh>
+          <mesh material={goldMaterial}>
+            <torusGeometry args={[0.27, 0.035, 12, 40]} />
+          </mesh>
+        </group>
+        <mesh material={goldMaterial} position={[0, 0, 0.045]}>
+          <boxGeometry args={[0.05, 0.3, 0.03]} />
         </mesh>
-        <mesh material={goldMaterial}>
-          <torusGeometry args={[0.36, 0.045, 12, 40]} />
+        <mesh material={goldMaterial} position={[0, 0.06, 0.045]}>
+          <boxGeometry args={[0.18, 0.05, 0.03]} />
         </mesh>
       </group>
       <group ref={crossRef} frustumCulled={false}>

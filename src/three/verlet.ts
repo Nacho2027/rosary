@@ -20,7 +20,10 @@ export const PARTICLE_COUNT = LOOP_PARTICLES + PENDANT_PARTICLES
 export const ANCHOR: readonly [number, number, number] = [0, 6, 0]
 
 /** collision radius per bead kind (slightly under visual radius) */
-const BODY_RADIUS = { small: 0.2, large: 0.29, medal: 0.42, crucifix: 0.45 } as const
+const BODY_RADIUS = { small: 0.2, large: 0.23, medal: 0.36, crucifix: 0.45 } as const
+
+/** invisible fingers at the anchor: beads drape around them, not into them */
+const FINGER_RADIUS = 0.52
 
 const H = 1 / 120 // fixed substep
 const MAX_FRAME = 1 / 30
@@ -163,7 +166,15 @@ export function buildChain(heldBead: number): Chain {
 }
 
 export function holdBead(chain: Chain, bead: number): void {
-  chain.held = chain.beadParticle[bead]
+  const p = chain.beadParticle[bead]
+  if (p === chain.held) {
+    // same bead, next prayer: a gentle tug on the chain below so the tap
+    // still lands physically even though nothing transfers
+    for (const n of [p - 1, p + 1]) {
+      if (n >= 0 && n < PARTICLE_COUNT) chain.prev[n * 3 + 1] += 0.05
+    }
+  }
+  chain.held = p
   chain.calmFor = 0
 }
 
@@ -248,10 +259,29 @@ function substep(chain: Chain, damping: number): void {
     }
   }
 
+  // the fingers holding the current bead occupy space: push every other
+  // bead out of a small sphere at the anchor so nothing piles onto it
+  const { bodies, bodyRadius } = chain
+  for (let a = 0; a < bodies.length; a++) {
+    const pa = bodies[a]
+    if (pa === held || pa === grabbed) continue
+    const i = pa * 3
+    const dx = pos[i] - ANCHOR[0]
+    const dy = pos[i + 1] - ANCHOR[1]
+    const dz = pos[i + 2] - ANCHOR[2]
+    const minDist = FINGER_RADIUS + bodyRadius[a]
+    const d2 = dx * dx + dy * dy + dz * dz
+    if (d2 >= minDist * minDist || d2 === 0) continue
+    const dist = Math.sqrt(d2)
+    const push = ((minDist - dist) / dist) * 0.8
+    pos[i] += dx * push
+    pos[i + 1] += dy * push
+    pos[i + 2] += dz * push
+  }
+
   // bead-to-bead collisions so dangling beads rest against each other
   // instead of interpenetrating. ponytail: O(n²) over 61 bodies is ~1.8k
   // pairs — cheaper than any broadphase at this scale.
-  const { bodies, bodyRadius } = chain
   for (let a = 0; a < bodies.length; a++) {
     const pa = bodies[a]
     const i = pa * 3

@@ -24,7 +24,19 @@ export function PrayerCard() {
         {done ? (
           <Complete lang={lang} onReset={reset} />
         ) : (
-          <StepView key={step} step={SEQUENCE[step]} lang={lang} set={set} first={step === 0} />
+          <StepView
+            // consecutive Hail Marys keep the card mounted — only the counter
+            // ticks — so the text doesn't re-flash ten times per decade
+            key={
+              SEQUENCE[step].prayer === 'hailMary'
+                ? `hm-${SEQUENCE[step].decade ?? 0}`
+                : `step-${step}`
+            }
+            step={SEQUENCE[step]}
+            lang={lang}
+            set={set}
+            first={step === 0}
+          />
         )}
       </div>
     </section>
@@ -61,7 +73,10 @@ function StepView({
         <h2 className="caps m-0 text-sm font-normal text-ink-2">{context}</h2>
         {step.count && (
           <span className="caps text-sm whitespace-nowrap text-ink-2">
-            {step.count[0]} {UI.of[lang]} {step.count[1]}
+            <span key={step.count[0]} className="tick">
+              {step.count[0]}
+            </span>{' '}
+            {UI.of[lang]} {step.count[1]}
           </span>
         )}
       </header>
