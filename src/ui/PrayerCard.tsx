@@ -1,6 +1,7 @@
 import { SEQUENCE, type Step } from '../data/rosary'
 import { announceTitle, MYSTERIES, PRAYERS, UI } from '../data/texts'
 import { useMysterySet, useRosary } from '../store'
+import { GoldButton } from './Button'
 
 export function PrayerCard() {
   const step = useRosary((s) => s.step)
@@ -15,7 +16,11 @@ export function PrayerCard() {
       aria-live="polite"
       className="pointer-events-none absolute inset-x-3 bottom-3 pb-[env(safe-area-inset-bottom)] md:inset-x-auto md:top-[24dvh] md:right-[4vw] md:bottom-auto md:w-[27rem]"
     >
-      <div className="rounded-xl border border-ink/10 bg-card/92 px-6 py-5 backdrop-blur-[2px] md:px-9 md:py-8">
+      <div
+        data-card
+        onWheel={(e) => e.stopPropagation()}
+        className="pointer-events-auto touch-pan-y rounded-xl border border-ink/10 bg-card/95 px-6 py-5 select-text md:px-9 md:py-8"
+      >
         {done ? (
           <Complete lang={lang} onReset={reset} />
         ) : (
@@ -53,10 +58,10 @@ function StepView({
   return (
     <div className="rise">
       <header className="flex items-baseline justify-between gap-4">
-        <h2 className="caps text-sm text-ink-2 m-0 font-normal">{context}</h2>
+        <h2 className="caps m-0 text-sm font-normal text-ink-2">{context}</h2>
         {step.count && (
           <span className="caps text-sm whitespace-nowrap text-ink-2">
-            {step.count[0]} {lang === 'en' ? 'of' : 'de'} {step.count[1]}
+            {step.count[0]} {UI.of[lang]} {step.count[1]}
           </span>
         )}
       </header>
@@ -115,15 +120,11 @@ function PrayerLines({ text }: { text: string }) {
 function Complete({ lang, onReset }: { lang: 'en' | 'es'; onReset: () => void }) {
   return (
     <div className="rise py-4 text-center">
-      <p className="prayer-text m-0 italic">{lang === 'en' ? 'Amen.' : 'Amén.'}</p>
+      <p className="prayer-text m-0 italic">{UI.amen[lang]}</p>
       <p className="caps mt-3 mb-0 text-sm text-ink-2">{UI.complete[lang]}</p>
-      <button
-        type="button"
-        onClick={onReset}
-        className="caps pointer-events-auto mt-6 cursor-pointer rounded-md border border-gold-deep/50 bg-transparent px-5 py-2 text-sm text-gold-deep transition-colors duration-200 hover:bg-gold-deep/8"
-      >
+      <GoldButton onClick={onReset} className="mt-6">
         {UI.prayAgain[lang]}
-      </button>
+      </GoldButton>
     </div>
   )
 }

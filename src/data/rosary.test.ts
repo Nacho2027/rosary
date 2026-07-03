@@ -21,8 +21,8 @@ describe('the praying sequence', () => {
   })
 
   it('announces five mysteries and closes each decade with Glory Be + Fatima', () => {
-    expect(SEQUENCE.filter((s) => s.prayer === 'announce').map((s) => s.mystery)).toEqual([
-      0, 1, 2, 3, 4,
+    expect(SEQUENCE.filter((s) => s.prayer === 'announce').map((s) => s.decade)).toEqual([
+      1, 2, 3, 4, 5,
     ])
     expect(SEQUENCE.filter((s) => s.prayer === 'gloryBe')).toHaveLength(6)
     expect(SEQUENCE.filter((s) => s.prayer === 'fatima')).toHaveLength(5)

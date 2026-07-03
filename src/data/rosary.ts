@@ -30,12 +30,10 @@ export const BEADS: readonly BeadKind[] = [
 export interface Step {
   bead: number
   prayer: PrayerId | 'announce'
-  /** 1–5 while inside a decade */
+  /** 1–5 while inside a decade; announce steps show mystery decade−1 */
   decade?: number
   /** e.g. Hail Mary [3, 10] */
   count?: readonly [n: number, of: number]
-  /** mystery index 0–4, on announce steps */
-  mystery?: number
 }
 
 const decadeLarge = (d: number) => 6 + d * 11
@@ -47,12 +45,13 @@ function buildSequence(): Step[] {
     { bead: 0, prayer: 'creed' },
     { bead: 1, prayer: 'ourFather' },
     ...Array.from({ length: 3 }, (_, i): Step => ({ bead: 2 + i, prayer: 'hailMary', count: [i + 1, 3] })),
+    // said on the chain before the medal; the medal is the nearest piece
     { bead: 5, prayer: 'gloryBe' },
   ]
   for (let d = 0; d < 5; d++) {
     const decade = d + 1
     steps.push(
-      { bead: decadeLarge(d), prayer: 'announce', decade, mystery: d },
+      { bead: decadeLarge(d), prayer: 'announce', decade },
       { bead: decadeLarge(d), prayer: 'ourFather', decade },
       ...Array.from({ length: 10 }, (_, i): Step => ({
         bead: decadeSmall(d, i),

@@ -1,5 +1,6 @@
 import { UI } from '../data/texts'
 import { useRosary } from '../store'
+import { GoldButton } from './Button'
 
 const STEPS = {
   en: [
@@ -25,16 +26,15 @@ const STEPS = {
 }
 
 export function Guide() {
-  const open = useRosary((s) => s.guideOpen)
   const lang = useRosary((s) => s.lang)
   const close = useRosary((s) => s.openGuide)
-  if (!open) return null
 
   return (
     <div
       className="absolute inset-0 z-30 flex items-center justify-center bg-parchment/70 p-5 backdrop-blur-[3px]"
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
     >
       <div className="rise max-h-[85dvh] w-[30rem] max-w-full overflow-y-auto rounded-xl border border-ink/10 bg-card px-8 py-7 md:px-10">
         <h1 className="m-0 text-xl font-medium italic">{UI.guideTitle[lang]}</h1>
@@ -46,13 +46,9 @@ export function Guide() {
             </li>
           ))}
         </ol>
-        <button
-          type="button"
-          onClick={() => close(false)}
-          className="caps mt-6 w-full cursor-pointer rounded-md border border-gold-deep/50 bg-transparent px-5 py-2.5 text-sm text-gold-deep transition-colors duration-200 hover:bg-gold-deep/8"
-        >
+        <GoldButton onClick={() => close(false)} className="mt-6 w-full">
           {UI.begin[lang]}
-        </button>
+        </GoldButton>
       </div>
     </div>
   )

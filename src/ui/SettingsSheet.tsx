@@ -10,9 +10,12 @@ const LANGS: { id: Lang; label: string }[] = [
 ]
 
 export function SettingsSheet() {
-  const s = useRosary()
-  if (!s.settingsOpen) return null
+  const open = useRosary((s) => s.settingsOpen)
+  return open ? <Sheet /> : null
+}
 
+function Sheet() {
+  const s = useRosary()
   const close = () => s.openSettings(false)
 
   return (
@@ -23,6 +26,7 @@ export function SettingsSheet() {
         if (e.target === e.currentTarget) close()
       }}
       onPointerUp={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
     >
       <div className="rise w-full rounded-t-xl border border-ink/10 bg-card px-7 pt-6 pb-[max(1.75rem,env(safe-area-inset-bottom))] md:w-[24rem] md:rounded-xl md:pb-7">
         <header className="flex items-baseline justify-between">

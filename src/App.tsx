@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { SEQUENCE } from './data/rosary'
 import { UI } from './data/texts'
-import { useRosary } from './store'
+import { useGuideVisible, useRosary } from './store'
 import { grabApi, zoomBy } from './three/interaction'
 import { RosaryScene } from './three/RosaryScene'
 import { Guide } from './ui/Guide'
@@ -14,17 +14,19 @@ const TAP_MS = 600
 export default function App() {
   const step = useRosary((s) => s.step)
   const lang = useRosary((s) => s.lang)
+  const guideVisible = useGuideVisible()
 
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const tap = useRef<{ x: number; y: number; t: number } | null>(null)
-  const moved = useRef(false)
   const pinchDist = useRef<number | null>(null)
 
   // keyboard: space/→ advance, ←/backspace correct
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { settingsOpen, guideOpen, advance, back } = useRosary.getState()
-      if (settingsOpen || guideOpen) return
+      const { settingsOpen, guideOpen, guideSeen, advance, back } = useRosary.getState()
+      if (settingsOpen || guideOpen || !guideSeen) return
+      // let focused controls keep their native keyboard activation
+      if (document.activeElement?.closest('button, a, input, [tabindex]')) return
       if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'Enter') {
         e.preventDefault()
         advance()
@@ -37,10 +39,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const isUi = (e: React.PointerEvent) => (e.target as Element).closest('button') !== null
+  /** true when the event started on chrome that handles its own input */
+  const isUi = (e: React.PointerEvent) =>
+    (e.target as Element).closest('button, [data-card]') !== null
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (isUi(e)) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    const onUi = isUi(e)
+    // capture so a release outside the window still delivers pointerup
+    if (!onUi) e.currentTarget.setPointerCapture(e.pointerId)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (pointers.current.size === 2) {
       // pinch begins: stop dragging the chain, remember the finger gap
@@ -50,9 +57,9 @@ export default function App() {
       pinchDist.current = Math.hypot(a.x - b.x, a.y - b.y)
       return
     }
+    if (pointers.current.size > 2) return
     tap.current = { x: e.clientX, y: e.clientY, t: e.timeStamp }
-    moved.current = false
-    grabApi.current?.grab(e.clientX, e.clientY)
+    if (!onUi) grabApi.current?.grab(e.clientX, e.clientY)
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -60,7 +67,7 @@ export default function App() {
     if (!p) return
     p.x = e.clientX
     p.y = e.clientY
-    if (pointers.current.size === 2 && pinchDist.current !== null) {
+    if (pinchDist.current !== null && pointers.current.size >= 2) {
       const [a, b] = [...pointers.current.values()]
       const d = Math.hypot(a.x - b.x, a.y - b.y)
       zoomBy((d - pinchDist.current) * 0.004)
@@ -68,9 +75,9 @@ export default function App() {
       return
     }
     if (tap.current && Math.hypot(e.clientX - tap.current.x, e.clientY - tap.current.y) > TAP_SLOP) {
-      moved.current = true
+      tap.current = null // it's a drag now
     }
-    if (moved.current) grabApi.current?.drag(e.clientX, e.clientY)
+    grabApi.current?.drag(e.clientX, e.clientY)
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -79,9 +86,15 @@ export default function App() {
     grabApi.current?.release()
     const t = tap.current
     tap.current = null
-    if (t && !moved.current && e.timeStamp - t.t < TAP_MS && !isUi(e)) {
-      useRosary.getState().advance()
-    }
+    if (t && e.timeStamp - t.t < TAP_MS) useRosary.getState().advance()
+  }
+
+  const onPointerCancel = (e: React.PointerEvent) => {
+    // the browser took the gesture (e.g. card scroll) — never advance
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinchDist.current = null
+    grabApi.current?.release()
+    tap.current = null
   }
 
   const settings = useRosary((s) => s.openSettings)
@@ -94,8 +107,8 @@ export default function App() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onWheel={(e) => zoomBy(-e.deltaY * 0.002)}
+      onPointerCancel={onPointerCancel}
+      onWheel={(e) => zoomBy(-(e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY) * 0.002)}
     >
       <RosaryScene />
 
@@ -126,11 +139,9 @@ export default function App() {
         </button>
       </header>
 
-      <div className="select-text">
-        <PrayerCard />
-      </div>
+      <PrayerCard />
       <SettingsSheet />
-      <Guide />
+      {guideVisible && <Guide />}
     </main>
   )
 }
