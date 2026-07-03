@@ -128,7 +128,7 @@ function layout(chain: Chain): void {
     pos[i * 3 + 1] = ANCHOR[1] - d
     // strands pass on either side; the pendant hangs behind the loop so the
     // crucifix doesn't tangle through the doubled strands
-    pos[i * 3 + 2] = i >= LOOP_PARTICLES ? -0.24 : branch[i] * 0.07
+    pos[i * 3 + 2] = i >= LOOP_PARTICLES ? -0.34 : branch[i] * 0.07
   }
   chain.prev.set(pos)
 }
