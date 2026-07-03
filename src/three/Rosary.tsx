@@ -93,6 +93,7 @@ const ringGeometry = new TorusGeometry(1, 0.03, 12, 64)
 const tmpObj = new Object3D()
 const tmpV = new Vector3()
 const tmpV2 = new Vector3()
+const tmpV3 = new Vector3()
 const tmpQ = new Quaternion()
 const UP = new Vector3(0, 1, 0)
 const tmpColor = new Color()
@@ -257,12 +258,17 @@ export function Rosary() {
       cross.quaternion.slerp(tmpQ, 1 - Math.exp(-7 * dt))
 
       // where a rod meets the medal or crucifix it attaches to a FIXED lug
-      // on the piece — real hardware, not a point sliding around the rim
+      // on the piece — the top lug on whichever side the strand actually
+      // hangs, so chain never crosses the medal's face
       const lugFor = (self: number, other: number, out: Vector3): boolean => {
         if (self === 0) {
-          // the three links at the medal: →1 (decades right), →111 (decades
-          // left), →112 (pendant below)
-          out.copy(other === 1 ? MEDAL_LUG_R : other === 111 ? MEDAL_LUG_L : MEDAL_LUG_B)
+          if (other === beadParticle[4]) {
+            out.copy(MEDAL_LUG_B)
+          } else {
+            at(pos, other, out).sub(medal.position)
+            tmpV3.set(1, 0, 0).applyQuaternion(medal.quaternion)
+            out.copy(out.dot(tmpV3) >= 0 ? MEDAL_LUG_R : MEDAL_LUG_L)
+          }
           out.applyQuaternion(medal.quaternion).add(medal.position)
           return true
         }
@@ -273,18 +279,13 @@ export function Rosary() {
         return false
       }
 
-      // per gap: bare pin · loop ⟷ loop · pin — the two loops interlock at
-      // 90° like real bent-wire eye pins; gaps longer than the hardware
-      // (around the centerpiece and the crucifix drop) get a run of fine
-      // chain links instead of any rigid bar
+      // per gap, one connected assembly with contact by construction:
+      // bead · pin ─ loop ⟷ loop ─ pin · bead. The two loops interlock at
+      // 90° at the gap's middle; each pin runs from the bead surface INTO
+      // its loop's near edge, so nothing ever floats. Long gaps simply get
+      // longer pins, like a stiff eye-pin wire.
       const pins = pinsRef.current!
       const loops = loopsRef.current!
-      const hide = (mesh: InstancedMesh, i: number) => {
-        tmpObj.scale.setScalar(0)
-        tmpObj.updateMatrix()
-        mesh.setMatrixAt(i, tmpObj.matrix)
-      }
-      let chainlet = gaps.length * 2 // spare loop instances for chain runs
       for (let gi = 0; gi < gaps.length; gi++) {
         const { a, b } = gaps[gi]
         at(pos, a, tmpV)
@@ -297,50 +298,40 @@ export function Rosary() {
         const ra = lugA ? 0 : particleR[a] * 0.97
         const rb = lugB ? 0 : particleR[b] * 0.97
         const span = len - ra - rb
-        if (span < 0.06) {
-          hide(loops, gi * 2)
-          hide(loops, gi * 2 + 1)
-          hide(pins, gi * 2)
-          hide(pins, gi * 2 + 1)
-          continue
-        }
-        const pinLen = Math.min(0.06, Math.max(0.004, span / 2 - LOOP_R * 1.4))
+        // loops shrink to fit tight gaps so they always stay in contact
+        const s = MathUtils.clamp(span / (LOOP_R * 3), 0.4, 1)
+        const loopR = LOOP_R * s
+        const mid = ra + span / 2
         const roll = gi * (Math.PI / 2)
 
-        const seat = (dist: number, sign: 1 | -1, pinI: number, loopI: number) => {
-          tmpObj.position.copy(tmpV).addScaledVector(tmpV2, dist + (sign * pinLen) / 2)
-          tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
-          tmpObj.scale.set(1, pinLen, 1)
-          tmpObj.updateMatrix()
-          pins.setMatrixAt(pinI, tmpObj.matrix)
-          tmpObj.position.copy(tmpV).addScaledVector(tmpV2, dist + sign * (pinLen + LOOP_R * 0.9))
+        const seat = (surface: number, sign: 1 | -1, pinI: number, loopI: number) => {
+          // loop just off the gap's middle, its plane containing the wire
+          const loopCenter = mid - sign * loopR * 0.45
+          tmpObj.position.copy(tmpV).addScaledVector(tmpV2, loopCenter)
           tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
           tmpObj.rotateY(roll + (sign > 0 ? 0 : Math.PI / 2))
           tmpObj.rotateX(Math.PI / 2)
-          tmpObj.scale.setScalar(1)
+          tmpObj.scale.setScalar(s)
           tmpObj.updateMatrix()
           loops.setMatrixAt(loopI, tmpObj.matrix)
+          // pin from just inside the bead to just inside the loop
+          const pinEnd = loopCenter - sign * loopR * 0.6
+          const pinLen = Math.abs(pinEnd - surface) + 0.03
+          if (pinLen > 0.035) {
+            tmpObj.position
+              .copy(tmpV)
+              .addScaledVector(tmpV2, (surface - sign * 0.015 + pinEnd) / 2)
+            tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
+            tmpObj.scale.set(1, pinLen, 1)
+          } else {
+            tmpObj.scale.setScalar(0)
+          }
+          tmpObj.updateMatrix()
+          pins.setMatrixAt(pinI, tmpObj.matrix)
         }
         seat(ra, 1, gi * 2, gi * 2)
         seat(ra + span, -1, gi * 2 + 1, gi * 2 + 1)
-
-        // fine chain filling a long run: interlocked links, alternating 90°
-        const from = ra + pinLen + LOOP_R * 1.6
-        const to = ra + span - pinLen - LOOP_R * 1.6
-        const n = Math.min(10, Math.floor((to - from) / (LOOP_R * 1.5)))
-        for (let c = 0; c < n && chainlet < loops.count; c++) {
-          tmpObj.position
-            .copy(tmpV)
-            .addScaledVector(tmpV2, from + ((c + 0.5) / n) * (to - from))
-          tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
-          tmpObj.rotateY(roll + (c % 2) * (Math.PI / 2))
-          tmpObj.rotateX(Math.PI / 2)
-          tmpObj.scale.setScalar(0.9)
-          tmpObj.updateMatrix()
-          loops.setMatrixAt(chainlet++, tmpObj.matrix)
-        }
       }
-      while (chainlet < loops.count) hide(loops, chainlet++)
       pins.instanceMatrix.needsUpdate = true
       loops.instanceMatrix.needsUpdate = true
     }
@@ -396,7 +387,7 @@ export function Rosary() {
       />
       <instancedMesh
         ref={loopsRef}
-        args={[loopGeometry, goldMaterial, gaps.length * 2 + 24]}
+        args={[loopGeometry, goldMaterial, gaps.length * 2]}
         frustumCulled={false}
       />
       <mesh ref={haloRef} geometry={beadGeometry} material={haloMaterial} frustumCulled={false} />
