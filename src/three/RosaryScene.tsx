@@ -22,8 +22,8 @@ function domeTexture(): CanvasTexture {
   const g = c.getContext('2d')!
   const grad = g.createLinearGradient(0, 0, 0, 256)
   grad.addColorStop(0, '#b3a184')
-  grad.addColorStop(0.55, '#7d6f5b')
-  grad.addColorStop(1, '#38312a')
+  grad.addColorStop(0.55, '#847661')
+  grad.addColorStop(1, '#514639')
   g.fillStyle = grad
   g.fillRect(0, 0, 2, 256)
   return new CanvasTexture(c)
@@ -104,6 +104,8 @@ export function RosaryScene() {
             rotation={[Math.PI / 2, 0, 0]}
             scale={[6, 6, 1]}
           />
+          {/* soft front fill so faces toward the viewer never go muddy */}
+          <Lightformer intensity={0.65} color="#f3ece0" position={[0, 0, 12]} scale={[24, 18, 1]} />
         </Environment>
       </Canvas>
     </div>

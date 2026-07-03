@@ -36,18 +36,19 @@ const GARNET_PRAYED = new Color('#a05a52')
 /** last step index that touches each bead — a bead is "prayed" once past it */
 const LAST_STEP = BEADS.map((_, b) => SEQUENCE.reduce((last, s, i) => (s.bead === b ? i : last), -1))
 
+/* satin pearls: broad soft highlight windows, never a hard white dot */
 const pearlMaterial = new MeshPhysicalMaterial({
   color: '#ffffff',
-  roughness: 0.16,
+  roughness: 0.24,
   clearcoat: 1,
-  clearcoatRoughness: 0.22,
+  clearcoatRoughness: 0.42,
   iridescence: 0.45,
   iridescenceIOR: 1.22,
   iridescenceThicknessRange: [120, 480],
-  sheen: 0.4,
+  sheen: 0.5,
   sheenColor: '#ffe8f0',
-  sheenRoughness: 0.6,
-  envMapIntensity: 1.15,
+  sheenRoughness: 0.55,
+  envMapIntensity: 1.05,
 })
 
 const goldMaterial = new MeshStandardMaterial({
@@ -99,15 +100,6 @@ const seeded = (i: number, k: number) => {
 const at = (pos: Float32Array, p: number, out: Vector3) =>
   out.set(pos[p * 3], pos[p * 3 + 1], pos[p * 3 + 2])
 
-/** chain direction through a bead, from its neighbouring particles */
-const tangent = (pos: Float32Array, p: number, out: Vector3) => {
-  const a = Math.max(0, p - 1)
-  const b = Math.min(pos.length / 3 - 1, p + 1)
-  out.set(pos[b * 3] - pos[a * 3], pos[b * 3 + 1] - pos[a * 3 + 1], pos[b * 3 + 2] - pos[a * 3 + 2])
-  const len = out.length()
-  return len > 1e-6 ? out.divideScalar(len) : out.set(0, 1, 0)
-}
-
 export function Rosary() {
   const step = useRosary((s) => s.step)
   const chain = useMemo(
@@ -125,6 +117,17 @@ export function Rosary() {
   const size = useThree((s) => s.size)
   const pulse = useRef(0)
   const lastDrag = useRef({ x: 0, y: 0, t: 0, vx: 0, vy: 0 })
+
+  // visual radius per particle: links stop at these surfaces instead of
+  // running bead-center to bead-center
+  const particleR = useMemo(() => {
+    const r = new Float32Array(chain.pos.length / 3)
+    BEADS.forEach((kind, b) => {
+      r[chain.beadParticle[b]] =
+        kind === 'small' ? 0.21 : kind === 'large' ? 0.24 : kind === 'medal' ? 0.3 : 0.07
+    })
+    return r
+  }, [chain])
 
   // pointer ↔ world: a ray from the camera onto the chain's z=0 plane
   const worldAt = (clientX: number, clientY: number, out: Vector3) => {
@@ -195,49 +198,68 @@ export function Rosary() {
     // positions are frozen while asleep, so the uploaded matrices stay
     // valid and every per-particle update below can be skipped
     if (!isAsleep(chain)) {
-      // beads + their gold end-caps
+      // beads
       const inst = beadsRef.current!
-      const caps = capsRef.current!
       for (let i = 0; i < INST_BEADS.length; i++) {
         const b = INST_BEADS[i]
-        const p = beadParticle[b]
-        const r = RADIUS[BEADS[b] as 'small' | 'large']
-        at(pos, p, tmpObj.position)
-        tmpObj.scale.setScalar(r)
+        at(pos, beadParticle[b], tmpObj.position)
+        tmpObj.scale.setScalar(RADIUS[BEADS[b] as 'small' | 'large'])
         tmpObj.quaternion.identity()
         tmpObj.updateMatrix()
         inst.setMatrixAt(i, tmpObj.matrix)
-
-        tangent(pos, p, tmpV2)
-        tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
-        tmpObj.scale.setScalar(1)
-        tmpObj.position.addScaledVector(tmpV2, r * 0.94)
-        tmpObj.updateMatrix()
-        caps.setMatrixAt(i * 2, tmpObj.matrix)
-        at(pos, p, tmpObj.position)
-        tmpObj.position.addScaledVector(tmpV2, -r * 0.94)
-        tmpObj.rotateX(Math.PI)
-        tmpObj.updateMatrix()
-        caps.setMatrixAt(i * 2 + 1, tmpObj.matrix)
       }
       inst.instanceMatrix.needsUpdate = true
-      caps.instanceMatrix.needsUpdate = true
 
-      // chain links between particles
+      // chain runs surface to surface — never through a bead — with a small
+      // gold cap seated wherever a rod meets a bead
       const links = linksRef.current!
+      const caps = capsRef.current!
       const { links: L } = chain
       for (let l = 0; l < L.length; l += 3) {
-        at(pos, L[l], tmpV)
-        at(pos, L[l + 1], tmpV2)
-        tmpObj.position.copy(tmpV).add(tmpV2).multiplyScalar(0.5)
+        const a = L[l]
+        const b = L[l + 1]
+        at(pos, a, tmpV)
+        at(pos, b, tmpV2)
         tmpV2.sub(tmpV)
         const len = tmpV2.length() || 1e-6
-        tmpObj.quaternion.setFromUnitVectors(UP, tmpV2.divideScalar(len))
-        tmpObj.scale.set(1, len, 1)
+        tmpV2.divideScalar(len)
+        const ra = particleR[a] * 0.96
+        const rb = particleR[b] * 0.96
+        const seg = len - ra - rb
+        const li = l / 3
+        if (seg > 0.02) {
+          tmpObj.position.copy(tmpV).addScaledVector(tmpV2, ra + seg / 2)
+          tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
+          tmpObj.scale.set(1, seg, 1)
+        } else {
+          tmpObj.scale.setScalar(0)
+        }
         tmpObj.updateMatrix()
-        links.setMatrixAt(l / 3, tmpObj.matrix)
+        links.setMatrixAt(li, tmpObj.matrix)
+
+        // caps: wide end against the bead, pointing along this rod
+        if (ra > 0.1 && seg > 0.02) {
+          tmpObj.position.copy(tmpV).addScaledVector(tmpV2, ra + 0.02)
+          tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
+          tmpObj.scale.setScalar(1)
+        } else {
+          tmpObj.scale.setScalar(0)
+        }
+        tmpObj.updateMatrix()
+        caps.setMatrixAt(li * 2, tmpObj.matrix)
+        if (rb > 0.1 && seg > 0.02) {
+          tmpObj.position.copy(tmpV).addScaledVector(tmpV2, ra + seg - 0.02)
+          tmpV2.negate()
+          tmpObj.quaternion.setFromUnitVectors(UP, tmpV2)
+          tmpObj.scale.setScalar(1)
+        } else {
+          tmpObj.scale.setScalar(0)
+        }
+        tmpObj.updateMatrix()
+        caps.setMatrixAt(li * 2 + 1, tmpObj.matrix)
       }
       links.instanceMatrix.needsUpdate = true
+      caps.instanceMatrix.needsUpdate = true
 
       // medal: a coin hanging where the loop meets the pendant, tilting
       // with the pendant it carries
@@ -293,7 +315,7 @@ export function Rosary() {
     const ring = ringRef.current!
     ring.position.copy(view.beadPos)
     if (kind === 'crucifix') ring.position.y += CROSS_CENTER_Y
-    const ringR = kind === 'crucifix' ? CROSS_RING_R : kind === 'medal' ? 0.62 : RADIUS[kind] + 0.17
+    const ringR = kind === 'crucifix' ? CROSS_RING_R : kind === 'medal' ? 0.52 : RADIUS[kind] + 0.17
     ring.scale.setScalar(ringR * (1 + pulse.current * 0.3))
     ring.quaternion.copy(camera.quaternion)
   })
@@ -307,7 +329,7 @@ export function Rosary() {
       />
       <instancedMesh
         ref={capsRef}
-        args={[capGeometry, goldMaterial, INST_BEADS.length * 2]}
+        args={[capGeometry, goldMaterial, (chain.links.length / 3) * 2]}
         frustumCulled={false}
       />
       <instancedMesh
