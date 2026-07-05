@@ -22,8 +22,12 @@ export const ANCHOR: readonly [number, number, number] = [0, 6, 0]
 /** collision radius per bead kind (slightly under visual radius) */
 const BODY_RADIUS = { small: 0.2, large: 0.23, medal: 0.36, crucifix: 0.45 } as const
 
-/** invisible fingers at the anchor: beads drape around them, not into them */
+/** invisible fingers at the anchor: beads drape around them, not into them.
+ *  offset a touch sideways so the chain slides off the fingers instead of
+ *  hanging dead-straight through a held crucifix or medal */
 const FINGER_RADIUS = 0.52
+const FINGER_X = 0.14
+const FINGER_Z = 0.16
 
 const H = 1 / 120 // fixed substep
 const MAX_FRAME = 1 / 30
@@ -162,6 +166,7 @@ export function buildChain(heldBead: number): Chain {
   }
   layout(chain)
   for (let i = 0; i < 360; i++) substep(chain, DAMPING_CALM) // settle before first frame
+  chain.calmFor = 0 // never born asleep: the first frames must upload matrices
   return chain
 }
 
@@ -266,9 +271,9 @@ function substep(chain: Chain, damping: number): void {
     const pa = bodies[a]
     if (pa === held || pa === grabbed) continue
     const i = pa * 3
-    const dx = pos[i] - ANCHOR[0]
+    const dx = pos[i] - (ANCHOR[0] + FINGER_X)
     const dy = pos[i + 1] - ANCHOR[1]
-    const dz = pos[i + 2] - ANCHOR[2]
+    const dz = pos[i + 2] - (ANCHOR[2] + FINGER_Z)
     const minDist = FINGER_RADIUS + bodyRadius[a]
     const d2 = dx * dx + dy * dy + dz * dz
     if (d2 >= minDist * minDist || d2 === 0) continue

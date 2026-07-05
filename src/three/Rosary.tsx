@@ -134,7 +134,7 @@ export function Rosary() {
     const r = new Float32Array(chain.pos.length / 3)
     BEADS.forEach((kind, b) => {
       r[chain.beadParticle[b]] =
-        kind === 'small' ? 0.21 : kind === 'large' ? 0.24 : kind === 'medal' ? 0.38 : 0.07
+        kind === 'medal' ? 0.38 : kind === 'crucifix' ? 0.07 : RADIUS[kind]
     })
     return r
   }, [chain])
@@ -192,7 +192,9 @@ export function Rosary() {
         }
       },
       release: () => {
-        releaseGrab(chain, lastDrag.current.vx, lastDrag.current.vy)
+        // a pointer held still fires no moves — don't flick with old speed
+        const stale = performance.now() - lastDrag.current.t > 120
+        releaseGrab(chain, stale ? 0 : lastDrag.current.vx, stale ? 0 : lastDrag.current.vy)
       },
     }
     return () => {

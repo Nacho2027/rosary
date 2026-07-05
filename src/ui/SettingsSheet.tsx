@@ -48,7 +48,9 @@ function Sheet() {
           {SETS.map((m) => (
             <Chip key={m} active={s.mysteryOverride === m} onClick={() => s.setMysteryOverride(m)}>
               {m === 'auto'
-                ? `${UI.auto[s.lang]} · ${UI.setNames[mysterySetForDay(new Date())][s.lang]}`
+                ? // mid-rosary the auto set stays pinned to the session, so the
+                  // label must name what auto would actually show
+                  `${UI.auto[s.lang]} · ${UI.setNames[s.step > 0 ? s.sessionSet : mysterySetForDay(new Date())][s.lang]}`
                 : UI.setNames[m][s.lang]}
             </Chip>
           ))}

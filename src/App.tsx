@@ -50,30 +50,34 @@ export default function App() {
     const target = e.target as Element
     const onButton = target.closest('button') !== null
     const onCard = target.closest('[data-card]') !== null
-    // capture so a release outside the window still delivers pointerup
-    if (!onButton && !onCard) e.currentTarget.setPointerCapture(e.pointerId)
-    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    if (pointers.current.size === 2) {
-      // pinch begins: stop dragging the chain, remember the finger pair
-      grabApi.current?.release()
-      tap.current = null
-      const [a, b] = [...pointers.current.keys()]
-      const pa = pointers.current.get(a)!
-      const pb = pointers.current.get(b)!
-      pinch.current = { a, b, dist: Math.hypot(pa.x - pb.x, pa.y - pb.y) }
-      return
+    // only canvas pointers join the map (pinch/drag); they get captured so a
+    // release outside the window can never leave a ghost entry behind
+    if (!onButton && !onCard) {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (pointers.current.size === 2) {
+        // pinch begins: stop dragging the chain, remember the finger pair
+        grabApi.current?.release()
+        tap.current = null
+        const [a, b] = [...pointers.current.keys()]
+        const pa = pointers.current.get(a)!
+        const pb = pointers.current.get(b)!
+        pinch.current = { a, b, dist: Math.hypot(pa.x - pb.x, pa.y - pb.y) }
+        return
+      }
+      if (pointers.current.size > 2) return
+      grabApi.current?.grab(e.clientX, e.clientY)
     }
-    if (pointers.current.size > 2) return
     // buttons handle their own clicks — a tap there must not also advance
     if (!onButton) tap.current = { x: e.clientX, y: e.clientY, t: e.timeStamp }
-    if (!onButton && !onCard) grabApi.current?.grab(e.clientX, e.clientY)
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
     const p = pointers.current.get(e.pointerId)
-    if (!p) return
-    p.x = e.clientX
-    p.y = e.clientY
+    if (p) {
+      p.x = e.clientX
+      p.y = e.clientY
+    }
     const pn = pinch.current
     if (pn) {
       const pa = pointers.current.get(pn.a)
@@ -86,9 +90,9 @@ export default function App() {
       return
     }
     if (tap.current && Math.hypot(e.clientX - tap.current.x, e.clientY - tap.current.y) > TAP_SLOP) {
-      tap.current = null // it's a drag now
+      tap.current = null // it's a drag (or a text selection) now
     }
-    grabApi.current?.drag(e.clientX, e.clientY)
+    if (p) grabApi.current?.drag(e.clientX, e.clientY)
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -99,8 +103,7 @@ export default function App() {
     grabApi.current?.release()
     const t = tap.current
     tap.current = null
-    // e.detail > 1 = double-click word selection; never advance twice for it
-    if (t && e.timeStamp - t.t < TAP_MS && e.detail <= 1 && !window.getSelection()?.toString()) {
+    if (t && e.timeStamp - t.t < TAP_MS && !window.getSelection()?.toString()) {
       useRosary.getState().advance()
     }
   }

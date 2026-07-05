@@ -6,9 +6,9 @@ import type { Lang, MysterySetId, PrayerId } from './rosary'
  * traditional thee/thou forms of common recitation.
  */
 
-export type Localized = Record<Lang, string>
+type Localized = Record<Lang, string>
 
-export interface PrayerText {
+interface PrayerText {
   title: Localized
   text: Localized
 }
@@ -72,7 +72,7 @@ export const PRAYERS: Record<PrayerId, PrayerText> = {
   },
 }
 
-export interface MysterySet {
+interface MysterySet {
   name: Localized
   /** for announcements: "Joyful" · "gozoso" */
   adjective: Localized

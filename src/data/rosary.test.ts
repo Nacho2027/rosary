@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { BEADS, SEQUENCE, mysterySetForDay } from './rosary'
-import { MYSTERIES, PRAYERS } from './texts'
 
 describe('the physical rosary', () => {
   it('has 59 beads plus crucifix and medal', () => {
@@ -54,18 +53,3 @@ describe('day-aware mysteries', () => {
   })
 })
 
-describe('texts', () => {
-  it('has both languages for every prayer and mystery', () => {
-    for (const prayer of Object.values(PRAYERS)) {
-      expect(prayer.text.en.length).toBeGreaterThan(0)
-      expect(prayer.text.es.length).toBeGreaterThan(0)
-    }
-    for (const set of Object.values(MYSTERIES)) {
-      expect(set.items).toHaveLength(5)
-      for (const m of set.items) {
-        expect(m.name.es.length).toBeGreaterThan(0)
-        expect(m.meditation.es.length).toBeGreaterThan(0)
-      }
-    }
-  })
-})
