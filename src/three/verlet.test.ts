@@ -90,14 +90,16 @@ describe('the verlet chain', () => {
   it('keeps beads from interpenetrating while dangling', () => {
     const chain = buildChain(28) // mid-loop: the loop dangles doubled
     settle(chain, 600)
-    const { bodies, bodyRadius, pos } = chain
-    for (let a = 0; a < bodies.length; a++) {
-      for (let b = a + 1; b < bodies.length; b++) {
-        const i = bodies[a] * 3
-        const j = bodies[b] * 3
+    const { beadParticle, bodyRadius, pos } = chain
+    for (let a = 0; a < beadParticle.length; a++) {
+      for (let b = a + 1; b < beadParticle.length; b++) {
+        const pa = beadParticle[a]
+        const pb = beadParticle[b]
+        const i = pa * 3
+        const j = pb * 3
         const d = Math.hypot(pos[j] - pos[i], pos[j + 1] - pos[i + 1], pos[j + 2] - pos[i + 2])
         // allow a whisker of overlap: the solver interleaves links + contacts
-        expect(d).toBeGreaterThan((bodyRadius[a] + bodyRadius[b]) * 0.75)
+        expect(d).toBeGreaterThan((bodyRadius[pa] + bodyRadius[pb]) * 0.8)
       }
     }
   })

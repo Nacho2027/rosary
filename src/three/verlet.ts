@@ -20,7 +20,8 @@ export const PARTICLE_COUNT = LOOP_PARTICLES + PENDANT_PARTICLES
 export const ANCHOR: readonly [number, number, number] = [0, 6, 0]
 
 /** collision radius per bead kind (slightly under visual radius) */
-const BODY_RADIUS = { small: 0.2, large: 0.23, medal: 0.36, crucifix: 0.45 } as const
+const BODY_RADIUS = { small: 0.2, large: 0.23, medal: 0.36, crucifix: 0.5 } as const
+const MIDPOINT_RADIUS = 0.09
 
 /** invisible fingers at the anchor: beads drape around them, not into them.
  *  offset a touch sideways so the chain slides off the fingers instead of
@@ -45,11 +46,11 @@ export interface Chain {
   w: Float32Array
   /** flattened [i, j, rest] triplets */
   links: Float32Array
+  /** pair keys (i*N+j) that share a link — contacts skip these */
+  linked: Set<number>
   beadParticle: number[]
-  /** particle indices that carry a bead body (for collisions) */
-  bodies: number[]
-  /** collision radius per bodies[] entry */
-  bodyRadius: number[]
+  /** collision radius per particle */
+  bodyRadius: Float32Array
   /** particle currently held at the anchor */
   held: number
   grabbed: number
@@ -139,12 +140,22 @@ function layout(chain: Chain): void {
 
 export function buildChain(heldBead: number): Chain {
   const beadParticle = BEADS.map((_, b) => beadToParticle(b))
-  const bodies: number[] = []
-  const bodyRadius: number[] = []
+
+  // every particle carries a collision body: beads at their real radius,
+  // chain midpoints small — so strands can't fold through beads or pass
+  // through each other ("switching sides")
+  const bodyRadius = new Float32Array(PARTICLE_COUNT).fill(MIDPOINT_RADIUS)
   BEADS.forEach((kind, b) => {
-    bodies.push(beadParticle[b])
-    bodyRadius.push(BODY_RADIUS[kind])
+    bodyRadius[beadParticle[b]] = BODY_RADIUS[kind]
   })
+
+  const links = buildLinks()
+  // directly-linked pairs rest closer than their radii — contacts skip them
+  const linked = new Set<number>()
+  for (let l = 0; l < links.length; l += 3) {
+    linked.add(links[l] * PARTICLE_COUNT + links[l + 1])
+    linked.add(links[l + 1] * PARTICLE_COUNT + links[l])
+  }
 
   const w = new Float32Array(PARTICLE_COUNT).fill(1)
   w[pend(10)] = 0.45 // the crucifix swings heavy
@@ -154,9 +165,9 @@ export function buildChain(heldBead: number): Chain {
     pos: new Float32Array(PARTICLE_COUNT * 3),
     prev: new Float32Array(PARTICLE_COUNT * 3),
     w,
-    links: buildLinks(),
+    links,
+    linked,
     beadParticle,
-    bodies,
     bodyRadius,
     held: beadParticle[heldBead],
     grabbed: -1,
@@ -240,6 +251,57 @@ function substep(chain: Chain, damping: number): void {
   }
   chain.calmFor = maxMove < SLEEP_EPSILON ? chain.calmFor + 1 : 0
 
+  // contacts must solve WITH the links, not after them: the chain folds at
+  // its midpoints under compression, and a lone post-pass loses 12-to-1
+  // against the link iterations, letting beads sink into each other.
+  const { bodyRadius, linked } = chain
+  const contacts = () => {
+    // fingers at the anchor: everything else drapes around them
+    for (let a = 0; a < PARTICLE_COUNT; a++) {
+      if (a === held || a === grabbed) continue
+      const i = a * 3
+      const fx = pos[i] - (ANCHOR[0] + FINGER_X)
+      const fy = pos[i + 1] - ANCHOR[1]
+      const fz = pos[i + 2] - (ANCHOR[2] + FINGER_Z)
+      const fMin = FINGER_RADIUS + bodyRadius[a]
+      const f2 = fx * fx + fy * fy + fz * fz
+      if (f2 < fMin * fMin && f2 > 0) {
+        const dist = Math.sqrt(f2)
+        const push = (fMin - dist) / dist
+        pos[i] += fx * push
+        pos[i + 1] += fy * push
+        pos[i + 2] += fz * push
+      }
+      // particle-to-particle: beads AND chain midpoints, so strands can't
+      // pass through each other. ponytail: brute-force pairs with axis
+      // early-outs — ~7.5k pairs is cheaper than any broadphase here.
+      for (let b = a + 1; b < PARTICLE_COUNT; b++) {
+        const minDist = bodyRadius[a] + bodyRadius[b]
+        const j = b * 3
+        const dx = pos[j] - pos[i]
+        if (dx > minDist || dx < -minDist) continue
+        const dy = pos[j + 1] - pos[i + 1]
+        if (dy > minDist || dy < -minDist) continue
+        const dz = pos[j + 2] - pos[i + 2]
+        const d2 = dx * dx + dy * dy + dz * dz
+        if (d2 >= minDist * minDist || d2 === 0) continue
+        if (linked.has(a * PARTICLE_COUNT + b)) continue
+        const wi = a === held || a === grabbed ? 0 : w[a]
+        const wj = b === held || b === grabbed ? 0 : w[b]
+        const wSum = wi + wj
+        if (wSum === 0) continue
+        const dist = Math.sqrt(d2)
+        const push = ((minDist - dist) / dist / wSum) * 0.9
+        pos[i] -= dx * push * wi
+        pos[i + 1] -= dy * push * wi
+        pos[i + 2] -= dz * push * wi
+        pos[j] += dx * push * wj
+        pos[j + 1] += dy * push * wj
+        pos[j + 2] += dz * push * wj
+      }
+    }
+  }
+
   for (let iter = 0; iter < ITERATIONS; iter++) {
     for (let l = 0; l < links.length; l += 3) {
       const a = links[l]
@@ -262,59 +324,9 @@ function substep(chain: Chain, damping: number): void {
       pos[j + 1] -= dy * s * wj
       pos[j + 2] -= dz * s * wj
     }
+    if (iter % 3 === 2) contacts() // interleave so contacts hold their ground
   }
-
-  // the fingers holding the current bead occupy space: push every other
-  // bead out of a small sphere at the anchor so nothing piles onto it
-  const { bodies, bodyRadius } = chain
-  for (let a = 0; a < bodies.length; a++) {
-    const pa = bodies[a]
-    if (pa === held || pa === grabbed) continue
-    const i = pa * 3
-    const dx = pos[i] - (ANCHOR[0] + FINGER_X)
-    const dy = pos[i + 1] - ANCHOR[1]
-    const dz = pos[i + 2] - (ANCHOR[2] + FINGER_Z)
-    const minDist = FINGER_RADIUS + bodyRadius[a]
-    const d2 = dx * dx + dy * dy + dz * dz
-    if (d2 >= minDist * minDist || d2 === 0) continue
-    const dist = Math.sqrt(d2)
-    const push = ((minDist - dist) / dist) * 0.8
-    pos[i] += dx * push
-    pos[i + 1] += dy * push
-    pos[i + 2] += dz * push
-  }
-
-  // bead-to-bead collisions so dangling beads rest against each other
-  // instead of interpenetrating. ponytail: O(n²) over 61 bodies is ~1.8k
-  // pairs — cheaper than any broadphase at this scale.
-  for (let a = 0; a < bodies.length; a++) {
-    const pa = bodies[a]
-    const i = pa * 3
-    for (let b = a + 1; b < bodies.length; b++) {
-      const pb = bodies[b]
-      const minDist = bodyRadius[a] + bodyRadius[b]
-      const j = pb * 3
-      const dx = pos[j] - pos[i]
-      if (dx > minDist || dx < -minDist) continue
-      const dy = pos[j + 1] - pos[i + 1]
-      if (dy > minDist || dy < -minDist) continue
-      const dz = pos[j + 2] - pos[i + 2]
-      const d2 = dx * dx + dy * dy + dz * dz
-      if (d2 >= minDist * minDist || d2 === 0) continue
-      const dist = Math.sqrt(d2)
-      const wi = pa === held || pa === grabbed ? 0 : w[pa]
-      const wj = pb === held || pb === grabbed ? 0 : w[pb]
-      const wSum = wi + wj
-      if (wSum === 0) continue
-      const push = ((minDist - dist) / dist / wSum) * 0.8
-      pos[i] -= dx * push * wi
-      pos[i + 1] -= dy * push * wi
-      pos[i + 2] -= dz * push * wi
-      pos[j] += dx * push * wj
-      pos[j + 1] += dy * push * wj
-      pos[j + 2] += dz * push * wj
-    }
-  }
+  contacts()
 }
 
 /** Advance the simulation by a rendered frame's dt (fixed-timestep inside). */
